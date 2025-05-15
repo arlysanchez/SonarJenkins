@@ -1,0 +1,13 @@
+services:
+  sonarqube:
+    container_name: sonarqube
+    image: sonarqube:9-community
+    volumes:
+      - .\data:/opt/sonarqube/data
+    ports:
+      - "9000:9000" #el primer puerto es donde se ejecuta fuera de docker y el segundo es dentro de docker
+networks:
+  default:
+    name: network_jenkins
+    external: true #usando la red creada con jenkins para que comuniquen dentro de docker
+
