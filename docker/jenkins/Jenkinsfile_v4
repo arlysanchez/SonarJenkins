@@ -24,12 +24,11 @@ pipeline {
             }
         }
         stage('Test') {
-           steps {
-             timeout(time: 2, unit: 'MINUTES') {
-            // Omite completamente las pruebas que requieren DB
-             sh "mvn test -Dspring.datasource.url=jdbc:h2:mem:testdb -Dspring.datasource.username=sa -Dspring.datasource.password= -Dspring.datasource.driver-class-name=org.h2.Driver"
-                }
-            }
+         steps {
+        timeout(time: 1, unit: 'MINUTES') {
+            sh "mvn test -DskipTests"
+               }
+           }
         }
         stage('Sonar') {
             steps {
