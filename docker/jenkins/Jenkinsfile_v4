@@ -73,7 +73,7 @@ pipeline {
                             attempts=0
                             max_attempts=30
                             while [ $attempts -lt $max_attempts ]; do
-                                if curl -s http://localhost:8082/actuator/health | grep -q '"status":"UP"'; then
+                                if curl -s http://localhost:8084/actuator/health | grep -q '"status":"UP"'; then
                                     echo "Application is up!"
                                     exit 0
                                 fi
