@@ -10,15 +10,16 @@ pipeline {
         stage('Clone') {
             steps {
                 timeout(time: 2, unit: 'MINUTES'){
-                    git 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-                    git 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
+                    // Especifica la rama master explícitamente para mayor claridad.
+                    git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
                 }
             }
         }
         stage('Build') {
             steps {
                 timeout(time: 2, unit: 'MINUTES'){
-                    sh "mvn -DskipTests clean package -f repasando-programacion/pom.xml"
+                    // Corregido: El pom.xml está en la raíz del workspace después del clone
+                    sh "mvn -DskipTests clean package"
                 }
             }
         }
@@ -26,33 +27,67 @@ pipeline {
             steps {
                 timeout(time: 2, unit: 'MINUTES'){
                     // Se cambia <test> por <install> para que se genere el reporte de jacoco
-                    sh "mvn clean install -f repasando-programacion/pom.xml"
+                    // Corregido: El pom.xml está en la raíz del workspace
+                    sh "mvn clean install"
                 }
             }
         }
         stage('Sonar') {
             steps {
                 timeout(time: 2, unit: 'MINUTES'){
-                    withSonarQubeEnv('sonarqube'){
-                        sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage -f repasando-programacion/pom.xml"
+                    withSonarQubeEnv('sonarqube'){ // Asegúrate que 'sonarqube' es el nombre de tu server SonarQube en la config de Jenkins
+                        sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage"
                     }
                 }
             }
         }
         stage('Quality gate') {
             steps {
+                sleep(10) //seconds 
 
-                sleep(10) //seconds
-
-                timeout(time: 2, unit: 'MINUTES'){
+                timeout(time: 10, unit: 'MINUTES'){
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
-        stage('Deploy') {
+           stage('Deploy') {
             steps {
-                echo "mvn spring-boot:run -f repasando-programacion/pom.xml"
+                script {
+                    // Detener y eliminar contenedores existentes
+                    sh 'docker-compose down || true'
+                    
+                    // Eliminar imágenes antiguas
+                    sh '''
+                        IMAGE_NAME=$(grep 'image:' docker-compose.yml | sed 's/image: //g; s/:.*//')
+                        docker rmi -f $(docker images $IMAGE_NAME -q) || true
+                    '''
+                    
+                    // Construir y levantar los servicios con tiempo de espera extendido
+                    timeout(time: 10, unit: 'MINUTES') {
+                        sh 'docker-compose up --build -d'
+                    }
+                    
+                    // Esperar a que la aplicación esté lista
+                    timeout(time: 5, unit: 'MINUTES') {
+                        sh '''
+                            attempts=0
+                            max_attempts=30
+                            while [ $attempts -lt $max_attempts ]; do
+                                if curl -s http://localhost:8082/actuator/health | grep -q '"status":"UP"'; then
+                                    echo "Application is up!"
+                                    exit 0
+                                fi
+                                echo "Waiting for application to start..."
+                                sleep 10
+                                attempts=$((attempts+1))
+                            done
+                            echo "Application failed to start within the expected time"
+                            exit 1
+                        '''
+                    }
+                }
             }
         }
     }
 }
+
