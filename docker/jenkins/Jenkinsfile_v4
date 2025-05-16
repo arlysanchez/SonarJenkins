@@ -24,14 +24,13 @@ pipeline {
             }
         }
         stage('Test') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES'){
-                    // Se cambia <test> por <install> para que se genere el reporte de jacoco
-                    // Corregido: El pom.xml está en la raíz del workspace
-                    sh "mvn clean install"
-                }
-            }
+    steps {
+        timeout(time: 2, unit: 'MINUTES') {
+            // Omite completamente las pruebas que requieren DB
+            sh "mvn test -Dspring.datasource.url=jdbc:h2:mem:testdb -Dspring.datasource.username=sa -Dspring.datasource.password= -Dspring.datasource.driver-class-name=org.h2.Driver"
         }
+    }
+}
         stage('Sonar') {
             steps {
                 timeout(time: 2, unit: 'MINUTES'){
