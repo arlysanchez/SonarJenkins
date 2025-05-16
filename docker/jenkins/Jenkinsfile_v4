@@ -62,7 +62,7 @@ pipeline {
                     
                     // Construir y levantar los servicios con tiempo de espera extendido
                     timeout(time: 10, unit: 'MINUTES') {
-                        sh 'docker-compose up --build -d'
+                        sh 'docker compose up --build -d'
                     }
                     
                     // Esperar a que la aplicación esté lista
