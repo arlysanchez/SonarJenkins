@@ -48,44 +48,67 @@ pipeline {
                 }
             }
         }
-           stage('Deploy') {
-            steps {
-                script {
-                    // Detener y eliminar contenedores existentes
-                    sh 'docker-compose down || true'
-                    
-                    // Eliminar imágenes antiguas
-                    sh '''
-                        IMAGE_NAME=$(grep 'image:' docker-compose.yml | sed 's/image: //g; s/:.*//')
-                        docker rmi -f $(docker images $IMAGE_NAME -q) || true
-                    '''
-                    
-                    // Construir y levantar los servicios con tiempo de espera extendido
-                    timeout(time: 10, unit: 'MINUTES') {
-                        sh 'docker compose up --build -d'
-                    }
-                    
-                    // Esperar a que la aplicación esté lista
-                    timeout(time: 5, unit: 'MINUTES') {
-                        sh '''
-                            attempts=0
-                            max_attempts=30
-                            while [ $attempts -lt $max_attempts ]; do
-                                if curl -s http://localhost:8084/actuator/health | grep -q '"status":"UP"'; then
-                                    echo "Application is up!"
-                                    exit 0
-                                fi
-                                echo "Waiting for application to start..."
-                                sleep 10
-                                attempts=$((attempts+1))
-                            done
-                            echo "Application failed to start within the expected time"
-                            exit 1
-                        '''
-                    }
-                }
+     stage('Deploy') {
+    steps {
+        script {
+            // 1. Configuración inicial
+            def dockerDir = 'ecommerce_Dockerizado/docker'
+            def targetDir = 'ecommerce_Dockerizado/target'
+            
+            // 2. Copiar archivos de configuración Docker (solo si es necesario)
+            sh """
+                mkdir -p ${targetDir} || true
+                cp ${dockerDir}/* ${targetDir}/ || true
+            """
+            
+            // 3. Limpieza de contenedores y volúmenes antiguos
+            sh """
+                docker-compose -f ${targetDir}/docker-compose.yml down \
+                --remove-orphans \
+                --volumes \
+                --timeout 30 || true
+            """
+            
+            // 4. Eliminación de imágenes antiguas (versión mejorada)
+            sh """
+                # Obtener nombre de la imagen del compose
+                IMAGE_NAME=\$(grep 'image:' ${dockerDir}/docker-compose.yml | awk '{print \$2}' | cut -d: -f1)
+                
+                # Eliminar imágenes si existen
+                if [ -n "\$IMAGE_NAME" ]; then
+                    docker images -q "\$IMAGE_NAME" | xargs -r docker rmi -f || true
+                fi
+                
+                # Limpiar imágenes huérfanas
+                docker image prune -f || true
+            """
+            
+            // 5. Construcción y despliegue con verificación
+            timeout(time: 15, unit: 'MINUTES') {
+                sh """
+                    docker-compose -f ${targetDir}/docker-compose.yml build --no-cache && \
+                    docker-compose -f ${targetDir}/docker-compose.yml up -d
+                """
+            }
+            
+            // 6. Verificación del servicio con timeout
+            timeout(time: 5, unit: 'MINUTES') {
+                sh """
+                    for i in \$(seq 1 30); do
+                        if curl -s http://localhost:8084/actuator/health | grep -q '"status":"UP"'; then
+                            echo "¡Aplicación desplegada correctamente!"
+                            exit 0
+                        fi
+                        sleep 10
+                        echo "Intento \$i: Esperando que la aplicación inicie..."
+                    done
+                    echo "ERROR: La aplicación no se inició en el tiempo esperado"
+                    exit 1
+                """
             }
         }
+    }
+}
     }
 }
 
