@@ -1,114 +1,85 @@
 pipeline {
-    agent any
-
+    agent {
+        docker {
+            image 'docker:24.0'
+            args '-v /var/run/docker.sock:/var/run/docker.sock --privileged'
+        }
+    }
     tools {
-        // Install the Maven version configured as "M3" and add it to the path.
-        maven "MAVEN_HOME"
+            // Install the Maven version configured as "M3" and add it to the path.
+            maven "MAVEN_HOME"
+        }
+
+    environment {
+        REPO_DIR = 'ecommerce_Dockerizado'
+        DOCKER_DIR = "${REPO_DIR}/docker"
+        APP_PORT = "8084"
     }
 
     stages {
         stage('Clone') {
             steps {
-                timeout(time: 2, unit: 'MINUTES'){
-                    // Especifica la rama master explícitamente para mayor claridad.
-                    git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-                }
+                git branch: 'master', 
+                url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
             }
         }
+
         stage('Build') {
             steps {
-                timeout(time: 2, unit: 'MINUTES'){
-                    // Corregido: El pom.xml está en la raíz del workspace después del clone
-                    sh "mvn -DskipTests clean package"
-                }
+                sh "mvn -DskipTests clean package"
             }
         }
-        stage('Test') {
+
+         stage('Test') {
          steps {
         timeout(time: 1, unit: 'MINUTES') {
             sh "mvn test -DskipTests"
                }
            }
         }
-        stage('Sonar') {
+
+        stage('Deploy') {
             steps {
-                timeout(time: 2, unit: 'MINUTES'){
-                    withSonarQubeEnv('sonarqube'){ // Asegúrate que 'sonarqube' es el nombre de tu server SonarQube en la config de Jenkins
-                        sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage"
+                script {
+                    // 1. Verificar estructura
+                    sh """
+                        echo "Verificando estructura del proyecto..."
+                        [ -f "${DOCKER_DIR}/Dockerfile" ] || { echo "ERROR: Dockerfile no encontrado"; exit 1; }
+                        [ -f "${DOCKER_DIR}/docker-compose.yml" ] || { echo "ERROR: docker-compose.yml no encontrado"; exit 1; }
+                        [ -f "${REPO_DIR}/target/ecommerce-0.0.1-SNAPSHOT.jar" ] || { echo "ERROR: JAR no encontrado"; exit 1; }
+                    """
+
+                    // 2. Limpieza previa
+                    sh """
+                        docker compose -f ${DOCKER_DIR}/docker-compose.yml down --remove-orphans --volumes || true
+                    """
+
+                    // 3. Construir y desplegar
+                    timeout(time: 15, unit: 'MINUTES') {
+                        sh """
+                            docker compose -f ${DOCKER_DIR}/docker-compose.yml build --no-cache
+                            docker compose -f ${DOCKER_DIR}/docker-compose.yml up -d
+                        """
+                    }
+
+                    // 4. Verificación
+                    timeout(time: 5, unit: 'MINUTES') {
+                        sh """
+                            for i in \$(seq 1 12); do
+                                if curl -s http://localhost:${APP_PORT}/actuator/health | grep -q '"status":"UP"'; then
+                                    echo "¡Aplicación desplegada correctamente!"
+                                    exit 0
+                                fi
+                                sleep 10
+                                echo "Verificando salud de la aplicación (intento \$i/12)..."
+                            done
+                            echo "ERROR: Tiempo de espera agotado"
+                            exit 1
+                        """
                     }
                 }
             }
         }
-        stage('Quality gate') {
-            steps {
-                sleep(10) //seconds 
-
-                timeout(time: 10, unit: 'MINUTES'){
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-     stage('Deploy') {
-    steps {
-        script {
-            // 1. Configuración inicial
-            def dockerDir = 'ecommerce_Dockerizado/docker'
-            def targetDir = 'ecommerce_Dockerizado/target'
-            
-            // 2. Copiar archivos de configuración Docker (solo si es necesario)
-            sh """
-                mkdir -p ${targetDir} || true
-                cp ${dockerDir}/* ${targetDir}/ || true
-            """
-            
-            // 3. Limpieza de contenedores y volúmenes antiguos
-            sh """
-                docker-compose -f ${targetDir}/docker-compose.yml down \
-                --remove-orphans \
-                --volumes \
-                --timeout 30 || true
-            """
-            
-            // 4. Eliminación de imágenes antiguas (versión mejorada)
-            sh """
-                # Obtener nombre de la imagen del compose
-                IMAGE_NAME=\$(grep 'image:' ${dockerDir}/docker-compose.yml | awk '{print \$2}' | cut -d: -f1)
-                
-                # Eliminar imágenes si existen
-                if [ -n "\$IMAGE_NAME" ]; then
-                    docker images -q "\$IMAGE_NAME" | xargs -r docker rmi -f || true
-                fi
-                
-                # Limpiar imágenes huérfanas
-                docker image prune -f || true
-            """
-            
-            // 5. Construcción y despliegue con verificación
-            timeout(time: 15, unit: 'MINUTES') {
-                sh """
-                    docker-compose -f ${targetDir}/docker-compose.yml build --no-cache && \
-                    docker-compose -f ${targetDir}/docker-compose.yml up -d
-                """
-            }
-            
-            // 6. Verificación del servicio con timeout
-            timeout(time: 5, unit: 'MINUTES') {
-                sh """
-                    for i in \$(seq 1 30); do
-                        if curl -s http://localhost:8084/actuator/health | grep -q '"status":"UP"'; then
-                            echo "¡Aplicación desplegada correctamente!"
-                            exit 0
-                        fi
-                        sleep 10
-                        echo "Intento \$i: Esperando que la aplicación inicie..."
-                    done
-                    echo "ERROR: La aplicación no se inició en el tiempo esperado"
-                    exit 1
-                """
-            }
-        }
-    }
-}
     }
 }
 
