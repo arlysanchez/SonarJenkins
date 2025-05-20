@@ -1,48 +1,51 @@
 pipeline {
     agent any
-    tools {
-            // Install the Maven version configured as "M3" and add it to the path.
-            maven "MAVEN_HOME"
-        }
-
-    environment {
-        REPO_DIR = 'ecommerce_Dockerizado'
-        DOCKER_DIR = "${REPO_DIR}/docker"
-        APP_PORT = "8084"
+     tools {
+        // Install the Maven version configured as "M3" and add it to the path.
+        maven "MAVEN_HOME"
     }
 
     stages {
-        stage('Setup Docker') {
+        stage('Clone') {
             steps {
-                script {
-                    // Verificar que Docker esté instalado
-                    sh '''
-                        docker --version || { echo "ERROR: Docker no está instalado"; exit 1; }
-                        docker compose version || { echo "ERROR: Docker Compose V2 no disponible"; exit 1; }
-                    '''
+                timeout(time: 2, unit: 'MINUTES'){
+                    // Especifica la rama master explícitamente para mayor claridad.
+                    git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
                 }
             }
         }
-
-        stage('Clone') {
-            steps {
-                git branch: 'master', 
-                url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-            }
-        }
-
         stage('Build') {
             steps {
-                sh "mvn -DskipTests clean package"
+                timeout(time: 2, unit: 'MINUTES'){
+                    // Corregido: El pom.xml está en la raíz del workspace después del clone
+                    sh "mvn -DskipTests clean package"
+                }
             }
         }
-
          stage('Test') {
          steps {
         timeout(time: 1, unit: 'MINUTES') {
             sh "mvn test -DskipTests"
                }
            }
+        }
+        stage('Sonar') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES'){
+                    withSonarQubeEnv('sonarqube'){ // Asegúrate que 'sonarqube' es el nombre de tu server SonarQube en la config de Jenkins
+                        sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage"
+                    }
+                }
+            }
+        }
+        stage('Quality gate') {
+            steps {
+                sleep(10) //seconds 
+
+                timeout(time: 10, unit: 'MINUTES'){
+                    waitForQualityGate abortPipeline: true
+                }
+            }
         }
         stage('Deploy') {
             steps {
