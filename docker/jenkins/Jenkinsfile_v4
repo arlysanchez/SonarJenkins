@@ -60,17 +60,17 @@ pipeline {
                             //    El -v también elimina volúmenes anónimos.
                             //    --remove-orphans elimina contenedores de servicios que ya no existen en el compose file.
                             echo "Deteniendo y eliminando despliegue anterior (si existe)..."
-                            sh "docker compose down -v --remove-orphans"
+                            sh "docker-compose down -v --remove-orphans"
                         } catch (Exception e) {
                             // Si falla (ej. no había nada corriendo), no es crítico, solo informamos.
-                            echo "Advertencia al intentar 'docker compose down': ${e.getMessage()}"
+                            echo "Advertencia al intentar 'docker-compose down': ${e.getMessage()}"
                             echo "Continuando con el despliegue..."
                         }
 
                         // 2. Construir las imágenes (si es necesario, ej. la app) y levantar los servicios en segundo plano.
                         //    --build fuerza la reconstrucción de la imagen de la app con el nuevo JAR.
                         echo "Construyendo imágenes y levantando servicios..."
-                        sh "docker compose up -d --build"
+                        sh "docker-compose up -d --build"
 
                         echo "Despliegue completado. Aplicación y base de datos deberían estar corriendo."
                         echo "App accesible en http://<jenkins_agent_ip>:8084"
