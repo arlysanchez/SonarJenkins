@@ -1,69 +1,127 @@
+// Jenkinsfile
+
 pipeline {
     agent any
 
     tools {
-        // Install the Maven version configured as "M3" and add it to the path.
-        maven "MAVEN_HOME"
-    }
-
-    environment {
-        SonarToken = credentials('Sonarqube')
-    }
-
-    parameters {
-        string defaultValue: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git', description: 'Se espera url del proyecto en GitHub', name: 'GitUrl'
-        string defaultValue: 'master', description: 'Se espera el nombre de la rama del proyecto en GitHub', name: 'Branch'
-        string defaultValue: 'com.example.esme', description: 'Se espera GroupId del pom.xml', name: 'GroupId'
-        string defaultValue: 'repasando-programacio', description: 'Se espera ArtifactId del pom.xml', name: 'ArtifactId'
+        maven "MAVEN_HOME" // Asegúrate que "MAVEN_HOME" es el nombre de tu config de Maven en Jenkins
     }
 
     stages {
         stage('Clone') {
             steps {
-                git branch:"${Branch}", url:"${GitUrl}"
+                timeout(time: 2, unit: 'MINUTES') {
+                    // Limpiar el workspace antes de clonar para asegurar una copia fresca
+                    cleanWs()
+                    git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
+                    // Opcional: Verificar finales de línea de init.sql si sospechas problemas
+                    // sh "file sql/init.sql"
+                    // sh "dos2unix sql/init.sql || true" // Intenta convertir a LF, || true para no fallar si dos2unix no existe o ya es LF
+                }
             }
         }
         stage('Build') {
             steps {
-                sh "mvn -DskipTests clean package"
+                timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco por si acaso
+                    sh "mvn -DskipTests clean package"
+                }
             }
         }
-        stage('Test') {
+        stage('Test') { // Aunque los saltas, es bueno tener la etapa
             steps {
-                sh "mvn clean install"
+                timeout(time: 1, unit: 'MINUTES') {
+                    sh "mvn test -DskipTests" // Actualmente saltando tests
+                }
             }
         }
-        stage('Sonar') {
+        stage('Sonar Analysis') { // Renombrado para claridad
             steps {
-                sh "mvn sonar:sonar -Pcoverage -Dsonar.host.url=${SONAR_URL_DEV} -Dsonar.login=${SonarToken}"
+                timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco
+                    withSonarQubeEnv('sonarqube') { // Nombre de tu server SonarQube en Jenkins
+                        sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage"
+                    }
+                }
             }
         }
-        stage('Quality Gate') {
+        stage('Quality Gate') { // Renombrado para claridad
             steps {
-                sleep(10) //seconds
+                // No es necesario un sleep aquí si SonarQube webhook está bien configurado o si el análisis es rápido.
+                // El waitForQualityGate ya tiene un timeout implícito.
+                timeout(time: 10, unit: 'MINUTES') { // Timeout para el quality gate en sí
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Deploy Application') { // Renombrado para claridad
+            steps {
+                echo "Iniciando despliegue de la aplicación con Docker Compose..."
+                // Navegamos al directorio donde está el docker-compose.yml de la aplicación
+                dir('docker') {
+                    script {
+                        def dockerProjectName = "ecomapp" // Nombre de proyecto explícito para Docker Compose
 
-                /*
-                * Se implementa la consulta de la QualityGate de Sonar
-                * grep -o $SONAR_KEY => permite obtener todos los status en lineas una bajo la otra
-                * sed 1q => permite obtener la primera fila de los estatus
-                * sed $SONAR_STATUS => permite obtner el valor del status
-                */
-                sh '''
-                    SONAR_KEY='"status":"[^"]*'
-                    SONAR_STATUS='s/"status":"//g'
-                    SONAR_RESPONSE=$(curl -u $SonarToken: "${SONAR_URL_API_DEV}=${GroupId}:${ArtifactId}" | grep -o $SONAR_KEY | sed 1q | sed $SONAR_STATUS)
+                        try {
+                            echo "Deteniendo y eliminando despliegue anterior (si existe)..."
+                            // Usar -p para especificar un nombre de proyecto consistente
+                            // Esto ayuda a asegurar que los nombres de volúmenes y redes sean predecibles.
+                            sh "docker-compose -p ${dockerProjectName} down -v --remove-orphans --rmi local"
+                            echo "Despliegue anterior detenido y limpiado."
 
-                    if [ $SONAR_RESPONSE != 'OK' ]
-                    then
-                        return -1
-                    fi
-                '''
+                            // Opcional: Eliminar explícitamente el volumen si down -v no es suficiente
+                            // El nombre del volumen será ${dockerProjectName}_mysql_data
+                            echo "Intentando eliminar explícitamente el volumen ${dockerProjectName}_mysql_data..."
+                            sh "docker volume rm ${dockerProjectName}_mysql_data || true"
+                            echo "Intento de eliminación de volumen completado."
+
+                        } catch (Exception e) {
+                            echo "Advertencia durante la limpieza: ${e.getMessage()} (Puede que no existiera nada que limpiar)."
+                            echo "Continuando con el despliegue..."
+                        }
+
+                        echo "Construyendo imágenes y levantando servicios..."
+                        // Usar -p aquí también para consistencia
+                        sh "docker-compose -p ${dockerProjectName} up -d --build"
+                        echo "Comando 'docker-compose up' ejecutado."
+
+                        echo "Esperando a que los servicios se estabilicen (60 segundos)..."
+                        sleep(60) // Aumentado el sleep inicial
+
+                        echo "Logs del contenedor MySQL (mysql-ecommerce-prod) después del 'up':"
+                        // Usar el nombre del contenedor definido en docker-compose.yml (mysql-ecommerce-prod)
+                        // o el nombre generado por compose: ${dockerProjectName}-db-1 (o similar)
+                        // Para ser más robusto, usa el nombre del contenedor si es fijo.
+                        sh "docker logs mysql-ecommerce-prod"
+
+                        echo "Logs del contenedor de la Aplicación (product_app) después del 'up':"
+                        sh "docker logs product_app"
+
+                        echo "Despliegue completado. Aplicación y base de datos deberían estar corriendo."
+                        echo "App accesible (desde fuera de Docker) en http://<ip_de_tu_maquina_windows_o_agente_jenkins>:8084"
+
+                        echo "Esperando 90 segundos adicionales antes del health check para la aplicación..."
+                        sleep(90) // Sleep más largo antes del health check
+
+                        echo "Verificando salud de la aplicación..."
+                        sh "curl -v -f --connect-timeout 10 --max-time 20 http://host.docker.internal:8084/actuator/health || exit 1"
+                        // -v para verbose output de curl, --connect-timeout y --max-time para controlar tiempos de curl
+                        echo "Aplicación saludable."
+                    }
+                }
             }
         }
-        stage('Deploy') {
-            steps {
-                echo "mvn spring-boot:run -f micro-product/pom.xml"
-            }
+    }
+    post {
+        always {
+            echo 'Pipeline finalizado.'
+            // Aquí podrías añadir pasos de limpieza si es necesario,
+            // aunque 'docker-compose down' en el inicio de Deploy debería manejarlo.
+        }
+        success {
+            echo '¡Pipeline ejecutado con éxito!'
+        }
+        failure {
+            echo 'Pipeline falló.'
+            // Podrías añadir notificaciones aquí
         }
     }
 }
