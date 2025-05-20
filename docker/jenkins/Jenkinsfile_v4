@@ -44,37 +44,47 @@ pipeline {
                }
            }
         }
-      stage('Deploy') {
+        stage('Deploy') {
             steps {
-                script {
-                    withEnv(['DOCKER_HOST=unix:///var/run/docker.sock']) {
-                        sh """
-                            cd ${REPO_DIR}
-                            docker compose -f docker/docker-compose.yml down --remove-orphans --volumes || true
-                            docker compose -f docker/docker-compose.yml build --no-cache
-                            docker compose -f docker/docker-compose.yml up -d
-                        """
-                        
-                        // Verificación
-                        timeout(time: 5, unit: 'MINUTES') {
-                            sh """
-                                for i in \$(seq 1 12); do
-                                    if curl -s http://localhost:${APP_PORT}/actuator/health | grep -q '"status":"UP"'; then
-                                        echo "¡Aplicación desplegada correctamente!"
-                                        exit 0
-                                    fi
-                                    sleep 10
-                                    echo "Verificando salud de la aplicación (intento \$i/12)..."
-                                done
-                                echo "ERROR: Tiempo de espera agotado"
-                                exit 1
-                            """
+                echo "Iniciando despliegue con Docker Compose..."
+                // Navegamos al directorio donde está el docker-compose.yml
+                // El workspace de Jenkins es la raíz del proyecto clonado (ecommerce_Dockerizado)
+                dir('docker') { // El docker-compose.yml está en la subcarpeta 'docker'
+                    script {
+                        try {
+                            // 1. Detener y eliminar contenedores, redes y volúmenes anteriores (si existen)
+                            //    para asegurar un despliegue limpio.
+                            //    El -v también elimina volúmenes anónimos.
+                            //    --remove-orphans elimina contenedores de servicios que ya no existen en el compose file.
+                            echo "Deteniendo y eliminando despliegue anterior (si existe)..."
+                            sh "docker-compose down -v --remove-orphans"
+                        } catch (Exception e) {
+                            // Si falla (ej. no había nada corriendo), no es crítico, solo informamos.
+                            echo "Advertencia al intentar 'docker-compose down': ${e.getMessage()}"
+                            echo "Continuando con el despliegue..."
                         }
+
+                        // 2. Construir las imágenes (si es necesario, ej. la app) y levantar los servicios en segundo plano.
+                        //    --build fuerza la reconstrucción de la imagen de la app con el nuevo JAR.
+                        echo "Construyendo imágenes y levantando servicios..."
+                        sh "docker-compose up -d --build"
+
+                        echo "Despliegue completado. Aplicación y base de datos deberían estar corriendo."
+                        echo "App accesible en http://<jenkins_agent_ip>:8084"
+                        echo "DB accesible (desde el host) en <jenkins_agent_ip>:3309"
+
+                        // Opcional: Pequeña pausa y verificación de salud de la app
+                        sleep(20) // Dar tiempo a que la app inicie completamente
+                        echo "Verificando salud de la aplicación..."
+                        // Asumiendo que el agente Jenkins puede acceder a localhost:8084
+                        // Si Jenkins corre en Docker, podría ser el nombre del servicio o necesitar configurar redes.
+                        // Para un agente estándar, localhost debería funcionar si Docker expone el puerto al host.
+                        sh "curl -f http://localhost:8084/actuator/health || exit 1"
+                        echo "Aplicación saludable."
                     }
                 }
             }
-    
-    }
+        }
  }
 }
 
