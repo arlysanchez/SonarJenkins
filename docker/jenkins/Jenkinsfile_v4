@@ -72,17 +72,14 @@ pipeline {
                         echo "Construyendo imágenes y levantando servicios..."
                         sh "docker-compose up -d --build"
 
-                        echo "Despliegue completado. Aplicación y base de datos deberían estar corriendo."
-                        echo "App accesible en http://<jenkins_agent_ip>:8084"
-                        echo "DB accesible (desde el host) en <jenkins_agent_ip>:3309"
-
-                        // Opcional: Pequeña pausa y verificación de salud de la app
-                        sleep(20) // Dar tiempo a que la app inicie completamente
+                       echo "Despliegue completado. Aplicación y base de datos deberían estar corriendo."
+                        echo "App accesible en http://<jenkins_agent_ip>:8084" // Esto es para acceso externo
+                        echo "DB accesible (desde el host) en <jenkins_agent_ip>:3309" // Esto es para acceso externo
+                
+                        sleep(30) // Aumentar un poco el tiempo de espera para que la app inicie completamente
                         echo "Verificando salud de la aplicación..."
-                        // Asumiendo que el agente Jenkins puede acceder a localhost:8084
-                        // Si Jenkins corre en Docker, podría ser el nombre del servicio o necesitar configurar redes.
-                        // Para un agente estándar, localhost debería funcionar si Docker expone el puerto al host.
-                        sh "curl -f http://localhost:8084/actuator/health || exit 1"
+                        // Usar el nombre del servicio de la app, ya que Jenkins está en la misma red
+                        sh "curl -f http://product_app:8084/actuator/health || exit 1" // <--- CAMBIO AQUÍ
                         echo "Aplicación saludable."
                     }
                 }
