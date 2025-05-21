@@ -15,7 +15,7 @@ pipeline {
                     git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
                     echo "Asegurando finales de línea LF para sql/init.sql..."
                     // El path es relativo al workspace raíz
-                    sh "sed -i.bak 's/\\r$//' sql/init.sql" 
+                    sh 'sed -i.bak "s/\\r$//" sql/init.sql'
                 }
             }
         }
