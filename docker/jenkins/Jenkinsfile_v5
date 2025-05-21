@@ -8,17 +8,26 @@ pipeline {
     }
 
     stages {
-        stage('Clone') {
+       stage('Clone') {
             steps {
                 timeout(time: 2, unit: 'MINUTES') {
                     cleanWs()
                     git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-                    echo "Asegurando finales de línea LF para sql/init.sql..."
-                    // El path es relativo al workspace raíz
-                    sh 'sed -i.bak "s/\\r$//" sql/init.sql'
+                    echo "Contenido de sql/init.sql ANTES de sed:"
+                    sh 'cat sql/init.sql | head -n 5' // Muestra las primeras 5 líneas
+                    sh 'file sql/init.sql' // Intenta obtener información del tipo de archivo y finales de línea
+        
+                    echo "Aplicando sed para asegurar finales de línea LF para sql/init.sql..."
+                    sh '''sed -i.bak 's/\\r$//' sql/init.sql''' // Usando triple comilla simple y comillas simples para el regex de sed
+        
+                    echo "Contenido de sql/init.sql DESPUÉS de sed:"
+                    sh 'cat sql/init.sql | head -n 5'
+                    sh 'file sql/init.sql'
+                    echo "Contenido del archivo de backup sql/init.sql.bak (si se creó):"
+                    sh 'cat sql/init.sql.bak | head -n 5 || echo "No se creó archivo .bak o está vacío"'
                 }
             }
-        }
+       }
         stage('Build') {
             steps {
                 timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco por si acaso
@@ -84,11 +93,12 @@ pipeline {
 
                         echo "Esperando a que los servicios se estabilicen (60 segundos)..."
                         sleep(60) // Aumentado el sleep inicial
-
+                        echo "Verificando el init.sql montado DENTRO del contenedor MySQL:"
+                        sh "docker exec mysql-ecommerce-prod ls -l /docker-entrypoint-initdb.d/"
+                        sh "docker exec mysql-ecommerce-prod cat /docker-entrypoint-initdb.d/init.sql | head -n 10" // Muestra las primeras 10 líneas
+                        sh "docker exec mysql-ecommerce-prod file /docker-entrypoint-initdb.d/init.sql"
+                        
                         echo "Logs del contenedor MySQL (mysql-ecommerce-prod) después del 'up':"
-                        // Usar el nombre del contenedor definido en docker-compose.yml (mysql-ecommerce-prod)
-                        // o el nombre generado por compose: ${dockerProjectName}-db-1 (o similar)
-                        // Para ser más robusto, usa el nombre del contenedor si es fijo.
                         sh "docker logs mysql-ecommerce-prod"
 
                         echo "Logs del contenedor de la Aplicación (product_app) después del 'up':"
