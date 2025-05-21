@@ -114,11 +114,15 @@ pipeline {
                         echo "Comando 'docker-compose up' ejecutado."
 
                         echo "Esperando a que los servicios se estabilicen (60 segundos)..."
-                        sleep(60) // Aumentado el sleep inicial
-                        echo "Verificando el init.sql montado DENTRO del contenedor MySQL:"
+                        sleep(60)
+                        
+                        echo "Verificando el script montado DENTRO del contenedor MySQL:"
                         sh "docker exec mysql-ecommerce-prod ls -l /docker-entrypoint-initdb.d/"
-                        sh "docker exec mysql-ecommerce-prod cat /docker-entrypoint-initdb.d/init.sql | head -n 10" // Muestra las primeras 10 líneas
-                        //sh "docker exec mysql-ecommerce-prod file /docker-entrypoint-initdb.d/init.sql"
+                        // Deberías ver '01-schema.sql'
+                        
+                        sh '''docker exec mysql-ecommerce-prod sh -c 'if [ -d /docker-entrypoint-initdb.d/01-schema.sql ]; then echo "CONTENEDOR: 01-schema.sql ES UN DIRECTORIO"; elif [ -f /docker-entrypoint-initdb.d/01-schema.sql ]; then echo "CONTENEDOR: 01-schema.sql ES UN ARCHIVO"; else echo "CONTENEDOR: 01-schema.sql NO EXISTE O ES OTRO TIPO"; fi' '''
+                        
+                        sh "docker exec mysql-ecommerce-prod sh -c 'if [ -f /docker-entrypoint-initdb.d/01-schema.sql ]; then cat /docker-entrypoint-initdb.d/01-schema.sql | head -n 10; else echo \"No se puede mostrar cat porque no es un archivo.\"; fi' "
                         
                         echo "Logs del contenedor MySQL (mysql-ecommerce-prod) después del 'up':"
                         sh "docker logs mysql-ecommerce-prod"
