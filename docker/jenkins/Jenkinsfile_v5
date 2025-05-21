@@ -11,12 +11,11 @@ pipeline {
         stage('Clone') {
             steps {
                 timeout(time: 2, unit: 'MINUTES') {
-                    // Limpiar el workspace antes de clonar para asegurar una copia fresca
                     cleanWs()
                     git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-                    // Opcional: Verificar finales de línea de init.sql si sospechas problemas
-                    // sh "file sql/init.sql"
-                    // sh "dos2unix sql/init.sql || true" // Intenta convertir a LF, || true para no fallar si dos2unix no existe o ya es LF
+                    echo "Asegurando finales de línea LF para sql/init.sql..."
+                    // El path es relativo al workspace raíz
+                    sh "sed -i.bak 's/\\r$//' sql/init.sql" 
                 }
             }
         }
