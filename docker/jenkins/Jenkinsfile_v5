@@ -96,7 +96,7 @@ pipeline {
                         echo "Verificando el init.sql montado DENTRO del contenedor MySQL:"
                         sh "docker exec mysql-ecommerce-prod ls -l /docker-entrypoint-initdb.d/"
                         sh "docker exec mysql-ecommerce-prod cat /docker-entrypoint-initdb.d/init.sql | head -n 10" // Muestra las primeras 10 líneas
-                        sh "docker exec mysql-ecommerce-prod file /docker-entrypoint-initdb.d/init.sql"
+                        //sh "docker exec mysql-ecommerce-prod file /docker-entrypoint-initdb.d/init.sql"
                         
                         echo "Logs del contenedor MySQL (mysql-ecommerce-prod) después del 'up':"
                         sh "docker logs mysql-ecommerce-prod"
