@@ -8,26 +8,32 @@ pipeline {
     }
 
     stages {
-       stage('Clone') {
+        stage('Clone') {
             steps {
                 timeout(time: 2, unit: 'MINUTES') {
+                    echo "Limpiando workspace..."
                     cleanWs()
+                    echo "Clonando repositorio..."
                     git branch: 'master', url: 'https://github.com/arlysanchez/ecommerce_Dockerizado.git'
-                    echo "Contenido de sql/init.sql ANTES de sed:"
-                    sh 'cat sql/init.sql | head -n 5' // Muestra las primeras 5 líneas
-                    //sh 'file sql/init.sql' // Intenta obtener información del tipo de archivo y finales de línea
-        
-                    echo "Aplicando sed para asegurar finales de línea LF para sql/init.sql..."
-                    sh '''sed -i.bak 's/\\r$//' sql/init.sql''' // Usando triple comilla simple y comillas simples para el regex de sed
-        
-                    echo "Contenido de sql/init.sql DESPUÉS de sed:"
-                    sh 'cat sql/init.sql | head -n 5'
-                    //sh 'file sql/init.sql'
-                    echo "Contenido del archivo de backup sql/init.sql.bak (si se creó):"
-                    sh 'cat sql/init.sql.bak | head -n 5 || echo "No se creó archivo .bak o está vacío"'
+
+                    echo "Verificando estructura de 'sql/' DESPUÉS del clone en el workspace de Jenkins:"
+                    sh 'ls -la sql/' // Muestra el contenido detallado de la carpeta sql
+                    // Si 'init.sql' es un directorio aquí, este es el problema raíz.
+                    // También puedes intentar ver el tipo con algo que no sea 'file' si no está:
+                    sh '''
+                        if [ -d "sql/init.sql" ]; then
+                          echo "ERROR: sql/init.sql ES UN DIRECTORIO en el workspace de Jenkins."
+                        elif [ -f "sql/init.sql" ]; then
+                          echo "OK: sql/init.sql ES UN ARCHIVO en el workspace de Jenkins."
+                          echo "Primeras líneas de sql/init.sql en el workspace:"
+                          head -n 5 sql/init.sql
+                        else
+                          echo "ADVERTENCIA: sql/init.sql no es ni un archivo ni un directorio, o no existe."
+                        fi
+                    '''
                 }
             }
-       }
+        }
         stage('Build') {
             steps {
                 timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco por si acaso
@@ -85,6 +91,22 @@ pipeline {
                             echo "Advertencia durante la limpieza: ${e.getMessage()} (Puede que no existiera nada que limpiar)."
                             echo "Continuando con el despliegue..."
                         }
+                     // --- INICIO DE VERIFICACIONES ANTES DEL DOCKER-COMPOSE UP ---
+                        echo "Verificando estructura de '../sql/' DESDE el directorio 'docker/' ANTES del docker-compose up:"
+                        // Estamos dentro de dir('docker'), así que '../sql/' es correcto para llegar a la carpeta sql en la raíz del workspace.
+                        sh 'ls -la ../sql/'
+                        sh '''
+                            if [ -d "../sql/init.sql" ]; then
+                              echo "ERROR PIPELINE: ../sql/init.sql ES UN DIRECTORIO justo antes del montaje."
+                            elif [ -f "../sql/init.sql" ]; then
+                              echo "OK PIPELINE: ../sql/init.sql ES UN ARCHIVO justo antes del montaje."
+                              echo "Primeras 5 líneas de ../sql/init.sql ANTES del montaje:"
+                              head -n 5 ../sql/init.sql
+                            else
+                              echo "ADVERTENCIA PIPELINE: ../sql/init.sql no es ni un archivo ni un directorio, o no existe, justo antes del montaje."
+                            fi
+                        '''
+                        // --- FIN DE VERIFICACIONES ANTES DEL DOCKER-COMPOSE UP ---
 
                         echo "Construyendo imágenes y levantando servicios..."
                         // Usar -p aquí también para consistencia
