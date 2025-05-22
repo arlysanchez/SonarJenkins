@@ -1,13 +1,25 @@
+
+version: '3.8'
+
 services:
   jenkins:
     container_name: jenkins
-    image: jenkins/jenkins:lts
+    build:
+      context: ./jenkins-docker-image
+      dockerfile: Dockerfile
+      args:
+        DOCKER_HOST_GID: 1001
+    image: my-custom-jenkins
     volumes:
       - .\jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "9080:8080"
     networks:
-      - backend
+      - backend # Solo la red interna de Jenkins/SonarQube
+    restart: unless-stopped
+
 networks:
   backend:
-    name: network_jenkins #red creada con jenkins
+    name: network_jenkins # Asumiendo que esta red existe o es creada por este compose
+                          # con el nombre lógico 'backend'
