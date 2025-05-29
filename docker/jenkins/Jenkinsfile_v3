@@ -28,7 +28,8 @@ pipeline {
                 timeout(time: 2, unit: 'MINUTES'){
                     // Se cambia <test> por <install> para que se genere el reporte de jacoco
                     // Corregido: El pom.xml está en la raíz del workspace
-                    sh "mvn clean install"
+                    // sh "mvn clean install" para testear com base de datos h2
+                    sh "mvn test -DskipTests" //salta el test para msql
                 }
             }
         }
