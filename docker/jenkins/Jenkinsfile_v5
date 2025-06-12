@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Clone') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
+                timeout(time: 10, unit: 'MINUTES') {
                     echo "Limpiando workspace..."
                     cleanWs()
                     echo "Clonando repositorio..."
@@ -36,21 +36,21 @@ pipeline {
         }
         stage('Build') {
             steps {
-                timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco por si acaso
+                timeout(time: 10, unit: 'MINUTES') { // Aumentado un poco por si acaso
                     sh "mvn -DskipTests clean package"
                 }
             }
         }
         stage('Test') { // Aunque los saltas, es bueno tener la etapa
             steps {
-                timeout(time: 1, unit: 'MINUTES') {
+                timeout(time: 10, unit: 'MINUTES') {
                     sh "mvn test -DskipTests" // Actualmente saltando tests
                 }
             }
         }
         stage('Sonar Analysis') { // Renombrado para claridad
             steps {
-                timeout(time: 3, unit: 'MINUTES') { // Aumentado un poco
+                timeout(time: 10, unit: 'MINUTES') { // Aumentado un poco
                     withSonarQubeEnv('sonarqube') { // Nombre de tu server SonarQube en Jenkins
                         sh "mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.0.2155:sonar -Pcoverage"
                     }
